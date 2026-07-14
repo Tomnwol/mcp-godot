@@ -1,11 +1,15 @@
 {
-  "name": "mcp-hello-server",
-  "version": "0.1.0",
-  "description": "Serveur MCP minimaliste (TypeScript) exposant un outil hello() de test",
+  "name": "godot-mcp-server",
+  "version": "0.1.1",
+  "description": "MCP bridge to the Godot editor",
+  "mcp": {
+    "name": "godot-mcp",
+    "title": "Godot MCP"
+  },
   "type": "module",
   "main": "build/server.js",
   "bin": {
-    "mcp-hello-server": "build/server.js"
+    "godot-mcp-server": "build/server.js"
   },
   "scripts": {
     "build": "tsc && chmod +x build/server.js",

@@ -1,62 +1,117 @@
-# mcp-hello-server (TypeScript)
+# Godot MCP Server
 
-Serveur MCP minimaliste, servant de squelette de validation avant intégration
-avec un plugin Godot. Basé sur le SDK officiel
+MCP (Model Context Protocol) server that connects AI assistants to the Godot
+editor and runtime. Built with the official
 [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk).
 
-Il expose un unique outil : `hello`, qui retourne `"Hello World"`.
+**Status: early development.** The server boots and exposes a `hello` tool to
+verify the MCP pipeline end-to-end. Godot-facing tools (scene tree, node
+properties, editor control, etc.) are planned next.
 
-## Pourquoi TypeScript ici ?
+## Architecture
 
-- SDK officiel maintenu par Anthropic, typé de bout en bout (schémas d'outils
-  validés avec `zod`).
-- Écosystème npm : facile d'ajouter ensuite un client WebSocket/TCP/HTTP pour
-  parler à Godot sans changer d'écosystème.
-- Compilation en JS standard (`build/`), donc exécutable partout où `node`
-  est disponible — pas de venv à gérer côté client.
+```
+┌─────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   TBD    ┌─────────────┐
+│   Cursor    │ ◄──────────────────► │   godot-mcp      │ ◄──────► │ Godot plugin│
+│  (client)   │                      │  (this project)  │          │  (planned)  │
+└─────────────┘                      └──────────────────┘          └─────────────┘
+```
 
-## 1. Installation
+The MCP server will eventually talk to Godot via a local channel (WebSocket,
+TCP, or HTTP API) exposed by a GDScript plugin in the editor.
+
+## Why TypeScript?
+
+- Official MCP SDK, fully typed (tool schemas validated with `zod`).
+- npm ecosystem: easy to add WebSocket/TCP/HTTP clients for Godot later.
+- Compiles to standard JS (`build/`), runnable anywhere Node is available.
+
+## Project metadata
+
+Server identity is defined once in `package.json`:
+
+```json
+{
+  "version": "0.1.1",
+  "description": "MCP bridge to the Godot editor",
+  "mcp": {
+    "name": "godot-mcp",
+    "title": "Godot MCP"
+  }
+}
+```
+
+`src/config.ts` reads these fields at startup and passes them to the MCP
+client via `initialize → serverInfo`. The key in `.cursor/mcp.json` must match
+`mcp.name`.
+
+## Installation
 
 ```bash
-cd mcp-hello-server-ts
+cd mcp-godot
 npm install
 npm run build
 ```
 
-Cela génère `build/server.js`, le fichier exécuté par les clients MCP.
+This produces `build/server.js`, the entry point used by MCP clients.
 
-## 2. Test en local (sans client)
+## Local testing (without Cursor)
 
-Le SDK fournit un inspecteur web pour tester le serveur sans passer par
-Claude Code ou Cursor :
+Use the MCP Inspector to call tools from the browser:
 
 ```bash
 npm run inspector
 ```
 
-Cela lance le "MCP Inspector" dans le navigateur : l'outil `hello` doit
-apparaître dans la liste, et on peut l'appeler manuellement pour vérifier
-la réponse `"Hello World"`.
-
-On peut aussi tester en pur JSON-RPC sur stdio, utile pour déboguer ou pour
-de futurs tests automatisés :
+Or send raw JSON-RPC over stdio:
 
 ```bash
 node build/server.js
-# puis coller des lignes JSON-RPC sur stdin, par ex. :
-# {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0.0.1"}}}
+# paste JSON-RPC lines on stdin, e.g.:
+# {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0.0.1"}}}
 ```
 
-## 3. Intégration avec Claude Code
+## Cursor integration
 
-Un fichier `.mcp.json` est déjà présent à la racine du projet (config de
-projet, chemin relatif — fonctionne tel quel une fois `npm run build`
-exécuté) :
+Project config is already at `.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
-    "hello-server": {
+    "godot-mcp": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-godot/build/server.js"]
+    }
+  }
+}
+```
+
+Replace `/absolute/path/to/` with the real path on your machine.
+
+After changing server code:
+
+```bash
+npm run build
+```
+
+Then **toggle the MCP server off and on** in `Settings → Tools & MCP`.
+Reload Window alone does not restart the Node process — the old code stays in
+memory until the process is killed.
+
+During development:
+
+```bash
+npm run watch   # recompile on save, then toggle MCP off → on
+```
+
+## Claude Code integration
+
+Add a `.mcp.json` at the project root (or use global config):
+
+```json
+{
+  "mcpServers": {
+    "godot-mcp": {
       "command": "node",
       "args": ["build/server.js"]
     }
@@ -64,64 +119,32 @@ exécuté) :
 }
 ```
 
-Depuis le dossier du projet :
+From the project directory:
 
 ```bash
 claude
 > /mcp
 ```
 
-Le serveur `hello-server` doit apparaître comme connecté, avec l'outil
-`hello` disponible. Il suffit ensuite de demander à Claude d'appeler l'outil
-(« utilise l'outil hello du serveur MCP ») pour valider le cycle complet.
-
-Alternative en config globale (utilisable depuis n'importe quel dossier) :
+Or register globally:
 
 ```bash
-claude mcp add hello-server -- node /chemin/absolu/vers/mcp-hello-server-ts/build/server.js
+claude mcp add godot-mcp -- node /absolute/path/to/mcp-godot/build/server.js
 ```
 
-## 4. Intégration avec Cursor
+## Roadmap
 
-Dans Cursor : `Settings` → `Features` → `MCP` → `Add new MCP server`,
-ou en éditant directement `~/.cursor/mcp.json` (global) ou
-`.cursor/mcp.json` (projet) :
+- [ ] Godot editor plugin (WebSocket or HTTP bridge)
+- [ ] `get_scene_tree` — read the current scene hierarchy
+- [ ] `get_node_property` / `set_node_property` — inspect and modify nodes
+- [ ] `run_scene` — launch a scene from the editor
+- [ ] Proper error handling when Godot is not running (`isError: true`)
+- [ ] Typed `inputSchema` with `zod` for every tool
 
-```json
-{
-  "mcpServers": {
-    "hello-server": {
-      "command": "node",
-      "args": ["/chemin/absolu/vers/mcp-hello-server-ts/build/server.js"]
-    }
-  }
-}
-```
+## Troubleshooting
 
-Redémarrer Cursor (ou recharger la fenêtre), puis vérifier dans les
-paramètres MCP que le serveur est listé comme "connected" avec l'outil
-`hello` visible.
-
-> Remplacer `/chemin/absolu/vers/` par le chemin réel sur votre machine.
-
-## 5. Étapes suivantes (extension vers Godot)
-
-Une fois ce squelette validé de bout en bout (détection du serveur, outil
-visible, appel fonctionnel), on peut étendre `src/server.ts` :
-
-- Ajouter de nouveaux outils (`server.registerTool(...)`) qui, au lieu de
-  retourner un texte statique, communiquent avec Godot via :
-  - un serveur TCP/WebSocket exposé par un plugin GDScript côté Godot
-    (le serveur MCP jouerait alors le rôle de client vers Godot, par ex.
-    avec le module `ws` ou `net` de Node) ; ou
-  - une petite API HTTP locale exposée par le jeu/l'éditeur Godot
-    (le serveur MCP ferait de simples appels `fetch`) ; ou
-  - un fichier ou pipe nommé partagé entre les deux processus.
-- Définir un vrai `inputSchema` avec `zod` pour chaque nouvel outil
-  (par ex. `{ nodePath: z.string(), value: z.number() }`), afin que le
-  client (Claude Code, Cursor) sache quels arguments fournir.
-- Ajouter une gestion d'erreurs propre (Godot non lancé, timeout de
-  connexion, etc.), renvoyée comme résultat d'outil en erreur
-  (`isError: true`) plutôt qu'une exception qui ferait planter le process.
-- Repasser `npm run build` (ou `npm run watch` pendant le développement)
-  après chaque modification.
+| Issue | Fix |
+|-------|-----|
+| Old tool output after `npm run build` | Toggle MCP off → on in Cursor settings |
+| Server shows red / error | `Output → MCP Logs`, check for startup errors |
+| `hello` tool not visible | Ensure `godot-mcp` is enabled in Tools & MCP |
