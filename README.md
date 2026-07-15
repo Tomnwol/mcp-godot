@@ -159,12 +159,17 @@ claude mcp add godot-mcp -- node /absolute/path/to/mcp-godot/build/server.js
 
 ## Roadmap
 
+See **[docs/tools-roadmap.md](docs/tools-roadmap.md)** for the full target tool
+set (~18 tools), difficulty/value ratings, and what to deliberately *not* build.
+
+Implemented so far:
+
 - [x] Godot editor plugin (WebSocket bridge)
 - [x] `ping_godot` — verify editor connectivity
 - [x] `get_scene_tree` — read the current scene hierarchy
 - [x] `list_node_properties` — discover node properties (AI-friendly filters)
 - [x] `get_node_property` / `set_node_property` — inspect and modify nodes
-- [ ] `run_scene` — launch a scene from the editor
+- [ ] Next P0 tools — see tools roadmap (`get_editor_state`, `create_node`, …)
 - [x] Error handling when Godot is not running (`isError: true`)
 - [x] Typed `inputSchema` with `zod` for every tool
 
