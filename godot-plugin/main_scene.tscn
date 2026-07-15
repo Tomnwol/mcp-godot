@@ -1,3 +1,15 @@
 [gd_scene format=3 uid="uid://c1tk5eg7rvul5"]
 
 [node name="MainScene" type="Node2D" unique_id=2026786851]
+
+[node name="Control" type="Control" parent="." unique_id=1488505350]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 35.0
+offset_top = 30.0
+offset_right = 75.0
+offset_bottom = 70.0
+
+[node name="HTTPRequest" type="HTTPRequest" parent="." unique_id=1983096474]
+
+[node name="Node3D" type="Node3D" parent="." unique_id=917598212]
