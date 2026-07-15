@@ -10,6 +10,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { serverInfo } from "./config.js";
+import { registerPingGodotTool } from "./tools/ping-godot.js";
+import { registerGetSceneTreeTool } from "./tools/get-scene-tree.js";
 
 const server = new McpServer(serverInfo);
 
@@ -27,6 +29,9 @@ server.registerTool(
     };
   }
 );
+
+registerPingGodotTool(server);
+registerGetSceneTreeTool(server);
 
 async function main() {
   // stdio transport: Cursor and Claude Code spawn this as a local subprocess

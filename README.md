@@ -4,21 +4,36 @@ MCP (Model Context Protocol) server that connects AI assistants to the Godot
 editor and runtime. Built with the official
 [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk).
 
-**Status: early development.** The server boots and exposes a `hello` tool to
-verify the MCP pipeline end-to-end. Godot-facing tools (scene tree, node
-properties, editor control, etc.) are planned next.
+**Status: early development.** The server boots, exposes a `hello` tool to
+verify the MCP pipeline, and a `ping_godot` tool that talks to the Godot
+editor plugin over WebSocket. Scene tree, node properties, and editor control
+are planned next.
 
 ## Architecture
 
 ```
-┌─────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   TBD    ┌─────────────┐
-│   Cursor    │ ◄──────────────────► │   godot-mcp      │ ◄──────► │ Godot plugin│
-│  (client)   │                      │  (this project)  │          │  (planned)  │
-└─────────────┘                      └──────────────────┘          └─────────────┘
+┌─────────────┐   stdio (JSON-RPC)   ┌──────────────────┐  WebSocket  ┌─────────────┐
+│   Cursor    │ ◄──────────────────► │   godot-mcp      │ ◄─────────► │ Godot plugin│
+│  (client)   │                      │  (this project)  │  :6505      │ godot-plugin│
+└─────────────┘                      └──────────────────┘             └─────────────┘
 ```
 
-The MCP server will eventually talk to Godot via a local channel (WebSocket,
-TCP, or HTTP API) exposed by a GDScript plugin in the editor.
+The MCP server talks to Godot via a local WebSocket (`ws://127.0.0.1:6505`)
+exposed by a GDScript plugin in `godot-plugin/`.
+
+## Godot plugin setup
+
+Copy `godot-plugin/addons/godot-mcp/` into your Godot project's `addons/`
+folder, then enable **Godot MCP** in **Project → Project Settings → Plugins**.
+
+See [`godot-plugin/README.md`](godot-plugin/README.md) for details. When
+active, the Godot output panel shows:
+
+```
+godot-mcp: listening on ws://127.0.0.1:6505
+```
+
+Then call the `ping_godot` MCP tool from Cursor or the inspector.
 
 ## Why TypeScript?
 
@@ -132,13 +147,27 @@ Or register globally:
 claude mcp add godot-mcp -- node /absolute/path/to/mcp-godot/build/server.js
 ```
 
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GODOT_MCP_HOST` | `127.0.0.1` (auto: Windows host IP on WSL2) | Godot plugin host |
+| `GODOT_MCP_PORT` | `6505` | Godot plugin WebSocket port |
+| `GODOT_MCP_TIMEOUT_MS` | `3000` | Connection timeout (ms) |
+
+On **WSL2**, Godot usually runs on Windows while this MCP server runs in Linux.
+`127.0.0.1` in WSL is not the same as `127.0.0.1` on Windows. The server
+auto-detects WSL and uses the Windows host IP (default gateway). Override with
+`GODOT_MCP_HOST` if needed.
+
 ## Roadmap
 
-- [ ] Godot editor plugin (WebSocket or HTTP bridge)
-- [ ] `get_scene_tree` — read the current scene hierarchy
+- [x] Godot editor plugin (WebSocket bridge)
+- [x] `ping_godot` — verify editor connectivity
+- [x] `get_scene_tree` — read the current scene hierarchy
 - [ ] `get_node_property` / `set_node_property` — inspect and modify nodes
 - [ ] `run_scene` — launch a scene from the editor
-- [ ] Proper error handling when Godot is not running (`isError: true`)
+- [x] Error handling when Godot is not running (`isError: true`)
 - [ ] Typed `inputSchema` with `zod` for every tool
 
 ## Troubleshooting
@@ -148,3 +177,4 @@ claude mcp add godot-mcp -- node /absolute/path/to/mcp-godot/build/server.js
 | Old tool output after `npm run build` | Toggle MCP off → on in Cursor settings |
 | Server shows red / error | `Output → MCP Logs`, check for startup errors |
 | `hello` tool not visible | Ensure `godot-mcp` is enabled in Tools & MCP |
+| `ping_godot` ECONNREFUSED on WSL2 | Godot is on Windows — set `GODOT_MCP_HOST` to your Windows host IP, or rebuild (auto-detects WSL) |
