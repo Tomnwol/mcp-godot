@@ -2,7 +2,7 @@
   "mcpServers": {
     "godot-mcp": {
       "command": "node",
-      "args": ["/home/tom/tmp/mcp-godot/build/server.js"]
+      "args": ["c:/Users/Tom/tmp/mcp-godot/build/server.js"]
     }
   }
 }

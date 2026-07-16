@@ -1,264 +1,140 @@
 # Godot MCP — Editor Plugin
 
-WebSocket bridge that runs inside the Godot editor (Godot 4.x). Uses
-`TCPServer` + `WebSocketPeer` — no `WebSocketServer` required.
+WebSocket bridge inside the Godot editor (Godot 4.5+ recommended; Logger
+capture needs 4.5+). Uses `TCPServer` + `WebSocketPeer`.
 
 ## Installation
 
-1. Copy the `addons/godot-mcp/` folder into your Godot project's `addons/`
-   directory:
-
-   ```
-   your-godot-project/
-   └── addons/
-       └── godot-mcp/    ← copy from this repo
-   ```
-
+1. Copy `addons/godot-mcp/` into your Godot project's `addons/` folder.
 2. Open the project in Godot 4.x.
-
-3. Go to **Project → Project Settings → Plugins** and enable **Godot MCP**.
-
-4. Check the Godot output panel — you should see:
+3. **Project → Project Settings → Plugins** → enable **Godot MCP**.
+4. Output panel should show:
 
    ```
    godot-mcp: listening on ws://127.0.0.1:6505
    ```
 
-## Verify from the MCP server
-
-With Godot running and the plugin enabled:
+## Verify
 
 ```bash
-# In the mcp-godot repo
-npm run build
-npm run inspector
-# Call the "ping_godot" tool
+npm run build && npm run inspector
+# Call godot_editor_ping
 ```
-
-Or from Cursor: enable the `godot-mcp` MCP server and ask the assistant to
-call `ping_godot`.
 
 ## WebSocket protocol
 
-**Version:** `1` (returned as `protocol_version` in `ping` responses)
+**Version:** `2` (breaking vs v1: compact ping, tree defaults, new methods)
 
-**Transport:** JSON over WebSocket at `ws://127.0.0.1:6505` (one request per
-connection for now).
+**Transport:** JSON over `ws://127.0.0.1:6505` (one request per connection).
 
-### Request envelope
+### Envelope
 
-```json
-{
-  "id": "unique-request-id",
-  "method": "method_name",
-  "params": {}
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | yes | Correlates the response |
-| `method` | string | yes | Method to invoke |
-| `params` | object | no | Method-specific parameters |
-
-### Success response
-
-```json
-{
-  "id": "unique-request-id",
-  "result": {}
-}
-```
-
-### Error response
-
-```json
-{
-  "id": "unique-request-id",
-  "error": {
-    "code": -32001,
-    "message": "Human-readable error"
-  }
-}
-```
+Request: `{ "id", "method", "params?" }`  
+Success: `{ "id", "result" }`  
+Error: `{ "id", "error": { "code", "message" } }`
 
 ### Error codes
 
 | Code | Meaning |
 |------|---------|
-| `-32700` | Parse error (invalid JSON) |
-| `-32600` | Invalid request (not an object) |
+| `-32700` | Parse error |
+| `-32600` | Invalid request |
 | `-32601` | Method not found |
-| `-32602` | Missing required parameter |
+| `-32602` | Invalid / missing params |
 | `-32001` | Node not found |
-| `-32002` | Property not found on node |
+| `-32002` | Property not found |
+| `-32003` | Save failed |
+| `-32004` | Script I/O failed |
 
 ## Methods
 
 ### `ping`
 
-Health check and protocol handshake.
-
-**Params:** none
-
-**Result:**
-
 ```json
-{
-  "pong": true,
-  "protocol_version": "1",
-  "godot_version": { "major": 4, "minor": 4, "patch": 0 },
-  "editor": true
-}
+{ "pong": true, "protocol_version": "2", "godot_version": "4.7.0", "editor": true }
 ```
+
+### `get_editor_state`
+
+No params. Returns `scene_path`, `root`, `selected[]`, `playing`, `main_screen`.
 
 ### `get_scene_tree`
 
-Returns the hierarchy of the scene currently open in the editor.
+| Param | Default | Notes |
+|-------|---------|-------|
+| `max_depth` | `2` | `-1` = unlimited (avoid) |
+| `limit` | `80` | Max nodes |
+| `format` | `outline` | `outline` \| `json` |
 
-**Params:**
+Outline example line: `  Player (CharacterBody2D) [Player]`
 
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `max_depth` | int | `-1` | Max depth (`-1` = unlimited, `0` = root only) |
+### `search_nodes`
 
-**Result:**
+| Param | Notes |
+|-------|-------|
+| `query` | Name substring (optional if `type` set) |
+| `type` | Class filter (optional if `query` set) |
+| `limit` | Default `20` |
 
-```json
-{
-  "scene_path": "res://main.tscn",
-  "root": {
-    "name": "Main",
-    "type": "Control",
-    "path": "Main",
-    "children": []
-  }
-}
-```
-
-When no scene is open, `root` is `null` and `message` explains why.
-
-Node `path` values are relative to the edited scene root.
-
-### `get_node_property`
-
-Read a single property from a node in the edited scene.
-
-**Params:**
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `path` | string | yes | Node path relative to scene root |
-| `property` | string | yes | Property name (e.g. `position`, `text`) |
-
-**Result:**
-
-```json
-{
-  "path": "Player",
-  "property": "position",
-  "value": { "x": 100, "y": 200 }
-}
-```
-
-**Value serialization:**
-
-| Godot type | JSON |
-|------------|------|
-| bool, int, float, string | as-is |
-| Vector2 / Vector3 | `{ "x", "y" }` / `{ "x", "y", "z" }` |
-| Color | `{ "r", "g", "b", "a" }` |
-| Array, Dictionary | recursive |
-| NodePath | string |
-| Node in scene | `{ "type": "Node", "path": "..." }` |
-| Other Object | `{ "type": "ClassName", "hint": "non-serializable object reference" }` |
-
-### `set_node_property`
-
-Write a property on a node in the edited scene.
-
-**Params:**
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `path` | string | yes | Node path relative to scene root |
-| `property` | string | yes | Property name |
-| `value` | any | yes | JSON value (same shapes as `get_node_property`) |
-
-**Result:** same shape as `get_node_property` with the updated value.
+Returns `{ matches: [{name,type,path}], total, truncated }`.
 
 ### `list_node_properties`
 
-List properties available on a node. Intended for discovery before
-`get_node_property` / `set_node_property`.
+| Param | Default |
+|-------|---------|
+| `path` | required |
+| `relevant_only` / `editable_only` | `true` |
+| `exported_only` / `include_values` | `false` |
+| `name_contains` | optional |
+| `detail` | `summary` (`name` \| `summary` \| `full`) |
+| `limit` | `60` |
 
-**Params:**
+### `get_node_property` / `set_node_property`
 
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `path` | string | — | Node path relative to scene root |
-| `exported_only` | bool | `false` | Only `@export` script variables |
-| `relevant_only` | bool | `true` | Compact AI-friendly subset |
-| `editable_only` | bool | `true` | Hide internal, read-only, inspector groups |
-| `include_values` | bool | `false` | Include current value of each property |
+Same as v1: `{ path, property }` / `{ path, property, value }` → `{ path, property, value }`.
 
-**Result:**
+### `create_node`
 
-```json
-{
-  "path": "Control",
-  "type": "Control",
-  "filters": {
-    "exported_only": false,
-    "editable_only": true,
-    "relevant_only": true,
-    "include_values": false
-  },
-  "properties": [
-    {
-      "name": "position",
-      "type": "Vector2",
-      "class_name": "",
-      "hint": 0,
-      "hint_string": "suffix:px",
-      "usage": ["editor"]
-    }
-  ]
-}
-```
+`{ parent, type, name? }` → `{ path, type, name, parent }`
 
-**Property entry fields:**
+### `delete_node`
 
-| Field | Description |
-|-------|-------------|
-| `name` | Property name for get/set calls |
-| `type` | Variant type name (or resource class for objects) |
-| `class_name` | Godot class for object references |
-| `hint` | Godot `PropertyHint` enum (e.g. `2` = enum) |
-| `hint_string` | Hint details (enum labels, ranges, etc.) |
-| `usage` | Flags: `storage`, `editor`, `script`, … |
-| `value` | Present when `include_values: true` |
+`{ path }` → `{ deleted }` (not scene root)
 
-**`relevant_only` filter:** keeps script variables and common editor/layout
-properties; hides accessibility, focus chains, process settings, computed
-runtime fields, and similar noise.
+### `instantiate_scene`
 
-## Examples
+`{ parent, scene_path, name? }` → instance summary
 
-```json
-{"id": "1", "method": "ping"}
+### `save_scene`
 
-{"id": "2", "method": "get_scene_tree", "params": {"max_depth": 2}}
+→ `{ saved, scene_path }`
 
-{"id": "3", "method": "list_node_properties", "params": {"path": "Control"}}
+### `get_script`
 
-{"id": "4", "method": "get_node_property", "params": {"path": "Player", "property": "position"}}
+`{ path? \| script_path?, offset?=1, limit?=80 }` → paginated `{ content, total_lines, truncated }`
 
-{"id": "5", "method": "set_node_property", "params": {"path": "Player/Label", "property": "text", "value": "Hello"}}
-```
+### `set_script`
 
-## Protocol versioning
+`{ script_path, content, attach_to? }` → `{ saved, bytes, lines }` (no content echo)
 
-`protocol_version` is returned by `ping`. When breaking changes are introduced
-to request/response shapes or method names, this string will be incremented.
-Clients should verify compatibility on connect.
+### `run_project` / `stop_project`
+
+`{ mode?: "main"\|"current" }` / no params
+
+### `get_output_log`
+
+`{ tail?=40, level?: "all"\|"error"\|"warning"\|"info" }` — ring buffer via `Logger`
+
+## Value serialization
+
+| Godot | JSON |
+|-------|------|
+| bool/int/float/string | as-is |
+| Vector2/3 | `{x,y}` / `{x,y,z}` |
+| Color | `{r,g,b,a}` |
+| Node in scene | `{type:"Node", path:"..."}` |
+
+## MCP tool names
+
+Bridge method names are unprefixed; the Node MCP server exposes namespaced
+tools (`godot_scene_get_tree` → method `get_scene_tree`, etc.).

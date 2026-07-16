@@ -10,6 +10,11 @@ offset_top = 30.0
 offset_right = 75.0
 offset_bottom = 70.0
 
+[node name="Label" type="Label" parent="Control" unique_id=923062009]
+layout_mode = 0
+
+[node name="Hello" type="Node2D" parent="Control" unique_id=304593484]
+
 [node name="HTTPRequest" type="HTTPRequest" parent="." unique_id=1983096474]
 
 [node name="Node3D" type="Node3D" parent="." unique_id=917598212]

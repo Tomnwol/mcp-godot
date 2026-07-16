@@ -1,13 +1,10 @@
 # Godot MCP Server
 
-MCP (Model Context Protocol) server that connects AI assistants to the Godot
-editor and runtime. Built with the official
-[`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk).
+MCP server that connects AI assistants to the Godot editor. Built with the
+official [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk).
 
-**Status: early development.** The server exposes Godot editor tools over
-WebSocket: `ping_godot`, `get_scene_tree`, `list_node_properties`,
-`get_node_property`, and `set_node_property`. `run_scene` and deeper editor
-control are planned next.
+**Status: v0.2** — 16 namespaced tools, compact JSON responses, search-first
+scene navigation, read/write annotations.
 
 ## Architecture
 
@@ -18,49 +15,44 @@ control are planned next.
 └─────────────┘                      └──────────────────┘             └─────────────┘
 ```
 
-The MCP server talks to Godot via a local WebSocket (`ws://127.0.0.1:6505`)
-exposed by a GDScript plugin in `godot-plugin/`.
+## Design principles (low token usage)
+
+- **Namespaced tools** (`godot_editor_*`, `godot_scene_*`, `godot_node_*`, …)
+- **Search before dump** — `godot_scene_search_nodes` over full trees
+- **Shallow defaults** — tree depth 2, outline format, property limits
+- **Compact JSON** — no pretty-print; paginated scripts/logs
+- **When-NOT-to-use** hints in every tool description
+- **Annotations** — `readOnlyHint` / `destructiveHint` for client gating
+
+Recommended discovery order:
+
+`godot_editor_get_state` → `godot_scene_search_nodes` → `godot_node_list_properties` → get/set → `godot_scene_save`
+
+## Tools (16)
+
+| Namespace | Tools |
+|-----------|-------|
+| `godot_editor_*` | `ping`, `get_state`, `run_project`, `stop_project` |
+| `godot_scene_*` | `get_tree`, `search_nodes`, `create_node`, `delete_node`, `instantiate`, `save` |
+| `godot_node_*` | `list_properties`, `get_property`, `set_property` |
+| `godot_script_*` | `get`, `set` |
+| `godot_log_*` | `get` |
+
+Full roadmap / anti-patterns: **[docs/tools-roadmap.md](docs/tools-roadmap.md)**.
 
 ## Godot plugin setup
 
-Copy `godot-plugin/addons/godot-mcp/` into your Godot project's `addons/`
-folder, then enable **Godot MCP** in **Project → Project Settings → Plugins**.
+Copy `godot-plugin/addons/godot-mcp/` into your project's `addons/` folder, then
+enable **Godot MCP** in **Project → Project Settings → Plugins**.
 
-See [`godot-plugin/README.md`](godot-plugin/README.md) for the WebSocket
-protocol reference (methods, params, error codes, protocol version).
+See [`godot-plugin/README.md`](godot-plugin/README.md) for the WebSocket protocol
+(v2).
 
-When active, the Godot output panel shows:
+When active:
 
 ```
 godot-mcp: listening on ws://127.0.0.1:6505
 ```
-
-Then call the `ping_godot` MCP tool from Cursor or the inspector.
-
-## Why TypeScript?
-
-- Official MCP SDK, fully typed (tool schemas validated with `zod`).
-- npm ecosystem: easy to add WebSocket/TCP/HTTP clients for Godot later.
-- Compiles to standard JS (`build/`), runnable anywhere Node is available.
-
-## Project metadata
-
-Server identity is defined once in `package.json`:
-
-```json
-{
-  "version": "0.1.1",
-  "description": "MCP bridge to the Godot editor",
-  "mcp": {
-    "name": "godot-mcp",
-    "title": "Godot MCP"
-  }
-}
-```
-
-`src/config.ts` reads these fields at startup and passes them to the MCP
-client via `initialize → serverInfo`. The key in `.cursor/mcp.json` must match
-`mcp.name`.
 
 ## Installation
 
@@ -70,84 +62,31 @@ npm install
 npm run build
 ```
 
-This produces `build/server.js`, the entry point used by MCP clients.
+Produces `build/server.js`.
 
-## Local testing (without Cursor)
-
-Use the MCP Inspector to call tools from the browser:
+## Local testing
 
 ```bash
 npm run inspector
 ```
 
-Or send raw JSON-RPC over stdio:
-
-```bash
-node build/server.js
-# paste JSON-RPC lines on stdin, e.g.:
-# {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0.0.1"}}}
-```
-
 ## Cursor integration
 
-Project config is already at `.cursor/mcp.json`:
+`.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "godot-mcp": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-godot/build/server.js"]
+      "args": ["c:/Users/Tom/tmp/mcp-godot/build/server.js"]
     }
   }
 }
 ```
 
-Replace `/absolute/path/to/` with the real path on your machine.
-
-After changing server code:
-
-```bash
-npm run build
-```
-
-Then **toggle the MCP server off and on** in `Settings → Tools & MCP`.
-Reload Window alone does not restart the Node process — the old code stays in
-memory until the process is killed.
-
-During development:
-
-```bash
-npm run watch   # recompile on save, then toggle MCP off → on
-```
-
-## Claude Code integration
-
-Add a `.mcp.json` at the project root (or use global config):
-
-```json
-{
-  "mcpServers": {
-    "godot-mcp": {
-      "command": "node",
-      "args": ["build/server.js"]
-    }
-  }
-}
-```
-
-From the project directory:
-
-```bash
-claude
-> /mcp
-```
-
-Or register globally:
-
-```bash
-claude mcp add godot-mcp -- node /absolute/path/to/mcp-godot/build/server.js
-```
+After changing server code: `npm run build`, then **toggle the MCP server off/on**
+in Settings → Tools & MCP (reload alone does not restart the process).
 
 ## Environment variables
 
@@ -157,26 +96,11 @@ claude mcp add godot-mcp -- node /absolute/path/to/mcp-godot/build/server.js
 | `GODOT_MCP_PORT` | `6505` | Godot plugin WebSocket port |
 | `GODOT_MCP_TIMEOUT_MS` | `3000` | Connection timeout (ms) |
 
-## Roadmap
-
-See **[docs/tools-roadmap.md](docs/tools-roadmap.md)** for the full target tool
-set (~18 tools), difficulty/value ratings, and what to deliberately *not* build.
-
-Implemented so far:
-
-- [x] Godot editor plugin (WebSocket bridge)
-- [x] `ping_godot` — verify editor connectivity
-- [x] `get_scene_tree` — read the current scene hierarchy
-- [x] `list_node_properties` — discover node properties (AI-friendly filters)
-- [x] `get_node_property` / `set_node_property` — inspect and modify nodes
-- [ ] Next P0 tools — see tools roadmap (`get_editor_state`, `create_node`, …)
-- [x] Error handling when Godot is not running (`isError: true`)
-- [x] Typed `inputSchema` with `zod` for every tool
-
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
-| Old tool output after `npm run build` | Toggle MCP off → on in Cursor settings |
-| Server shows red / error | `Output → MCP Logs`, check for startup errors |
-| `ping_godot` ECONNREFUSED | Ensure Godot is running with the MCP plugin enabled |
+| Old tool names / output after build | Toggle MCP off → on |
+| Server red / error | `Output → MCP Logs` |
+| `godot_editor_ping` ECONNREFUSED | Godot open + plugin enabled |
+| Protocol mismatch | Plugin protocol v2 required (re-copy addons) |
